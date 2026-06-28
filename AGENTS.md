@@ -28,7 +28,7 @@ Run in this order: `pnpm format && pnpm lint && pnpm typecheck && pnpm build`.
 - **Tailwind CSS v4** via `@tailwindcss/postcss` (no `tailwind.config` file)
 - **shadcn/ui** (`radix-nova` style), import from `@/components/ui/`
 - **Dark mode**: `next-themes`, toggle via `d` key (see `components/theme-provider.tsx`)
-- **Fonts**: Geist (sans), Geist Mono, Roboto Slab (serif) via next/font
+- **Fonts**: Geist (sans), Geist Mono (via next/font). Design system specifies `sohne-var` as primary font family (see `DESIGN.md`).
 
 ## Conventions
 
@@ -36,8 +36,43 @@ Run in this order: `pnpm format && pnpm lint && pnpm typecheck && pnpm build`.
 - Use `cn()` from `@/lib/utils` for class merging
 - No test framework installed yet
 - All shadcn/ui imports go through `@/components/ui/` (e.g., `@/components/ui/button`)
-- Form components are from `@/components/ui/form` — uses react-hook-form + radix-ui
-- Toast notifications via `sonner` (Toaster is already mounted in layout)
+
+## UI & Component Rules (Strict)
+
+### Do NOT modify these files
+- **`components/ui/*`** — shadcn/ui primitives. Never edit, restyle, or touch these files.
+- **`app/globals.css`** — the global theme. Never change it.
+
+The theme (colors, radius, fonts) is centralized in `globals.css` and `DESIGN.md`. All shadcn components inherit from these CSS variables automatically — you never need to touch them.
+
+### Always use shadcn components
+Every UI element must use shadcn/ui components from `@/components/ui/`. Do not write raw `<button>`, `<input>`, `<select>`, `<label>`, `<div className="card">`, etc. Instead use:
+
+| Instead of | Use |
+|---|---|
+| `<button>` | `<Button>` from `@/components/ui/button` |
+| `<input>` | `<Input>` from `@/components/ui/input` |
+| `<select>` | `<Select>` from `@/components/ui/select` |
+| `<label>` | `<Label>` from `@/components/ui/label` |
+| `<div className="card">` | `<Card>` from `@/components/ui/card` |
+| `<div className="tabs">` | `<Tabs>` from `@/components/ui/tabs` |
+| `<span className="badge">` | `<Badge>` from `@/components/ui/badge` |
+| `<div className="skeleton">` | `<Skeleton>` from `@/components/ui/skeleton` |
+| toast library | `sonner` (`import { toast } from "sonner"`, Toaster is in layout) |
+| form elements | `@/components/ui/form` (react-hook-form integration) |
+
+### Never use hardcoded colors, spacing, or radius
+Always use Tailwind theme tokens that map to CSS variables:
+
+✅ **Correct:** `text-foreground`, `bg-primary`, `border-border`, `text-muted-foreground`, `bg-muted`, `text-destructive`, `rounded-lg`, `p-4`, `gap-2`
+
+❌ **Wrong:** `text-[#0A2540]`, `bg-[#533AFD]`, `border-[#D9E2F2]`, `text-gray-600`, `rounded-[8px]`, `p-[14px]`
+
+The full set of available tokens is defined by the CSS variables in `globals.css`. You compose shadcn components using these tokens for layout, spacing, and composition — the components themselves already carry the correct theme styling.
+
+### You MAY change layout and composition
+You can change how components are arranged, wrapped, spaced, and nested. You can add wrapper divs, grids, flex layouts, padding, margins, and gaps — all using Tailwind theme tokens. You just can't change the components' own styling or the global theme.
+
 
 ## Env
 
@@ -129,14 +164,17 @@ All at `@/components/ui/`: `button`, `card`, `input`, `label`, `select`, `tabs`,
 
 ## How to build features
 
-1. Read the relevant section from `PRD.md`
-2. Create feature components/pages under `app/` or `components/`
-3. Import from `lib/api/*` for API calls
-4. Use `ResponseViewer` to display results, `EndpointSection` for layout
-5. Use `useApiCall<T>()` for manual trigger + state, or React Query hooks for auto-fetching
-6. Use `react-hook-form` + `@/components/ui/form` for forms with Zod validation via `@hookform/resolvers/zod`
-7. Use `sonner` toast for notifications: `import { toast } from "sonner"`
-8. Use `useAuthState()` for auth status, `checkAuth()` post-action to refresh
-9. All pages that use `useSearchParams()` must be wrapped in `Suspense`
+1. **Read `DESIGN.md`** — the design system defines colors, typography, spacing, radius, and component specs. Every UI element must conform.
+2. Read the relevant section from `PRD.md`
+3. Create feature components/pages under `app/` or `components/`
+4. Import from `lib/api/*` for API calls
+5. Use `ResponseViewer` to display results, `EndpointSection` for layout
+6. Use `useApiCall<T>()` for manual trigger + state, or React Query hooks for auto-fetching
+7. Use `react-hook-form` + `@/components/ui/form` for forms with Zod validation via `@hookform/resolvers/zod`
+8. Use `sonner` toast for notifications: `import { toast } from "sonner"`
+9. Use `useAuthState()` for auth status, `checkAuth()` post-action to refresh
+10. All pages that use `useSearchParams()` must be wrapped in `Suspense`
+11. **Never use hardcoded colors/tokens** — only Tailwind theme tokens (`text-foreground`, `bg-primary`, `border-border`, etc.)
+12. **Never write raw HTML elements** when a shadcn component exists (`<button>` → `<Button>`, etc.)
 
 Run `pnpm format && pnpm lint && pnpm typecheck && pnpm build` before marking feature complete.
