@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5173"
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000"
 
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl
