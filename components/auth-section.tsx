@@ -1,0 +1,616 @@
+"use client"
+
+import { useState } from "react"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { useAuthState } from "@/hooks/use-auth-state"
+import { useApiCall } from "@/hooks/use-api-call"
+import {
+  register as registerApi,
+  login as loginApi,
+  logout as logoutApi,
+  refreshToken as refreshApi,
+} from "@/lib/api/auth"
+import { registerSchema, loginSchema } from "@/lib/schemas/auth"
+import type {
+  RegisterInput,
+  LoginInput,
+  LoginData,
+  UserData,
+} from "@/lib/api/auth"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  Form,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormControl,
+  FormMessage,
+} from "@/components/ui/form"
+import { EndpointSection } from "@/components/endpoint-section"
+import { ResponseViewer } from "@/components/response-viewer"
+import { toast } from "sonner"
+
+function AuthStatusBar({
+  user,
+  isAuthenticated,
+  isLoading,
+}: {
+  user: UserData | null
+  isAuthenticated: boolean
+  isLoading: boolean
+}) {
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
+        <CardTitle className="text-sm">Authentication Status</CardTitle>
+        {isLoading ? (
+          <Badge variant="outline">Checking...</Badge>
+        ) : isAuthenticated ? (
+          <Badge variant="default">Authenticated</Badge>
+        ) : (
+          <Badge variant="secondary">Not Authenticated</Badge>
+        )}
+      </CardHeader>
+      <CardContent>
+        {isAuthenticated && user && (
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div>
+              <span className="text-muted-foreground">Username: </span>
+              <span>{user.username}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Email: </span>
+              <span>{user.email}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Verified: </span>
+              <Badge variant={user.isVerified ? "default" : "secondary"}>
+                {user.isVerified ? "Yes" : "No"}
+              </Badge>
+            </div>
+            <div>
+              <span className="text-muted-foreground">User ID: </span>
+              <code className="text-xs text-muted-foreground">{user._id}</code>
+            </div>
+          </div>
+        )}
+        {!isAuthenticated && !isLoading && (
+          <p className="text-sm text-muted-foreground">
+            You are not logged in. Use the Login or Register tabs below.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function RegisterTab() {
+  const registerCall = useApiCall<Record<string, never>>()
+  const [genderValue, setGenderValue] = useState<string>("")
+
+  const form = useForm<RegisterInput>({
+    resolver: zodResolver(registerSchema as any) as any,
+    defaultValues: {
+      username: "",
+      email: "",
+      password: "",
+      bio: "",
+      phoneNumber: "",
+    },
+  })
+
+  const onSubmit = form.handleSubmit(async (data) => {
+    const payload: RegisterInput = {
+      username: data.username,
+      email: data.email,
+      password: data.password,
+    }
+    if (data.bio) payload.bio = data.bio
+    if (data.phoneNumber) payload.phoneNumber = data.phoneNumber
+    if (data.gender) payload.gender = data.gender
+
+    const res = await registerCall.execute(() => registerApi(payload))
+    if (res?.kind === "success") {
+      toast.success("Registration successful!")
+    }
+  })
+
+  return (
+    <EndpointSection
+      title="Register"
+      description="Create a new user account. Rate limit: 3 per 60 minutes."
+      method="POST"
+      path="/api/auth"
+    >
+      <Form {...form}>
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField
+              control={form.control}
+              name="username"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Username *</FormLabel>
+                  <FormControl>
+                    <Input placeholder="johndoe" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email *</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="email"
+                      placeholder="john@example.com"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Password *</FormLabel>
+                <FormControl>
+                  <Input
+                    type="password"
+                    placeholder="Min 8 chars, 1 uppercase, 1 digit"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <div className="grid gap-4 sm:grid-cols-3">
+            <FormField
+              control={form.control}
+              name="bio"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Bio</FormLabel>
+                  <FormControl>
+                    <Input placeholder="About me..." {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="phoneNumber"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Phone</FormLabel>
+                  <FormControl>
+                    <Input placeholder="+1234567890" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="gender"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Gender</FormLabel>
+                  <Select
+                    onValueChange={(value) => {
+                      field.onChange(value)
+                      setGenderValue(value)
+                    }}
+                    value={genderValue}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select..." />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="male">Male</SelectItem>
+                      <SelectItem value="female">Female</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <Button type="submit" disabled={registerCall.isPending}>
+              {registerCall.isPending ? "Registering..." : "Register"}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              After registering, check the server console for the Ethereal email
+              preview URL to verify your email.
+            </p>
+          </div>
+        </form>
+      </Form>
+      <ResponseViewer
+        result={registerCall.result}
+        isPending={registerCall.isPending}
+      />
+    </EndpointSection>
+  )
+}
+
+function LoginTab() {
+  const loginCall = useApiCall<LoginData>()
+  const verifyCall = useApiCall<UserData>()
+  const { isAuthenticated, checkAuth } = useAuthState()
+  const [loginMode, setLoginMode] = useState<"email" | "username">("email")
+
+  const form = useForm<LoginInput>({
+    resolver: zodResolver(loginSchema as any) as any,
+    defaultValues: {
+      email: "",
+      username: "",
+      password: "",
+    },
+  })
+
+  const toggleMode = () => {
+    const next = loginMode === "email" ? "username" : "email"
+    if (next === "email") {
+      form.setValue("username", "")
+    } else {
+      form.setValue("email", "")
+    }
+    form.clearErrors()
+    setLoginMode(next)
+  }
+
+  const onSubmit = form.handleSubmit(async (data) => {
+    const payload: LoginInput = {
+      password: data.password,
+    }
+    if (loginMode === "email") {
+      payload.email = data.email
+    } else {
+      payload.username = data.username
+    }
+    const res = await loginCall.execute(() => loginApi(payload))
+    if (res?.kind === "success") {
+      toast.success("Login successful!")
+      await checkAuth()
+    }
+  })
+
+  const handleVerifyAuth = async () => {
+    await verifyCall.execute(() => checkAuth())
+  }
+
+  return (
+    <EndpointSection
+      title="Login"
+      description="Authenticate with email or username. Rate limit: 5 per 15 minutes."
+      method="POST"
+      path="/api/auth/login"
+    >
+      <Form {...form}>
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Login with:</span>
+            <Button
+              type="button"
+              variant={loginMode === "email" ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                if (loginMode !== "email") toggleMode()
+              }}
+            >
+              Email
+            </Button>
+            <Button
+              type="button"
+              variant={loginMode === "username" ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                if (loginMode !== "username") toggleMode()
+              }}
+            >
+              Username
+            </Button>
+          </div>
+          {loginMode === "email" && (
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email *</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="email"
+                      placeholder="john@example.com"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
+          {loginMode === "username" && (
+            <FormField
+              control={form.control}
+              name="username"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Username *</FormLabel>
+                  <FormControl>
+                    <Input placeholder="johndoe" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Password *</FormLabel>
+                <FormControl>
+                  <Input type="password" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <div className="flex items-center gap-3">
+            <Button type="submit" disabled={loginCall.isPending}>
+              {loginCall.isPending ? "Logging in..." : "Login"}
+            </Button>
+            {isAuthenticated && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleVerifyAuth}
+                disabled={verifyCall.isPending}
+              >
+                {verifyCall.isPending ? "Verifying..." : "Verify Auth"}
+              </Button>
+            )}
+          </div>
+        </form>
+      </Form>
+      <ResponseViewer
+        result={loginCall.result}
+        isPending={loginCall.isPending}
+      />
+      <ResponseViewer
+        result={verifyCall.result}
+        isPending={verifyCall.isPending}
+      />
+    </EndpointSection>
+  )
+}
+
+function LogoutTab() {
+  const logoutCall = useApiCall<null>()
+  const verifyCall = useApiCall<UserData>()
+  const { isAuthenticated, user, clearAuth, checkAuth } = useAuthState()
+
+  const handleLogout = async () => {
+    const res = await logoutCall.execute(() => logoutApi())
+    if (res?.kind === "success") {
+      toast.success("Logged out successfully")
+      clearAuth()
+    }
+  }
+
+  const handleVerifyPostLogout = async () => {
+    const res = await verifyCall.execute(() => checkAuth())
+    if (res?.kind === "api-error" || res?.kind === "network-error") {
+      toast.success("Auth state: logged out (confirmed)")
+    }
+  }
+
+  return (
+    <EndpointSection
+      title="Logout"
+      description="End the current session. Rate limit: 20 per 15 minutes."
+      method="POST"
+      path="/api/auth/logout"
+    >
+      <div className="space-y-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Current Auth State</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isAuthenticated && user ? (
+              <div className="flex items-center gap-2 text-sm">
+                <Badge variant="default">Logged In</Badge>
+                <span>{user.username}</span>
+                <span className="text-muted-foreground">({user.email})</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-sm">
+                <Badge variant="secondary">Not Logged In</Badge>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={handleLogout}
+            disabled={logoutCall.isPending}
+            variant="destructive"
+          >
+            {logoutCall.isPending ? "Logging out..." : "Logout"}
+          </Button>
+          {!isAuthenticated && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleVerifyPostLogout}
+              disabled={verifyCall.isPending}
+            >
+              {verifyCall.isPending ? "Verifying..." : "Verify Post-Logout"}
+            </Button>
+          )}
+        </div>
+      </div>
+      <ResponseViewer
+        result={logoutCall.result}
+        isPending={logoutCall.isPending}
+      />
+      <ResponseViewer
+        result={verifyCall.result}
+        isPending={verifyCall.isPending}
+      />
+    </EndpointSection>
+  )
+}
+
+function RefreshTab() {
+  const refreshCall = useApiCall<null>()
+  const verifyCall = useApiCall<UserData>()
+  const { isAuthenticated, checkAuth } = useAuthState()
+
+  const handleRefresh = async () => {
+    const res = await refreshCall.execute(() => refreshApi())
+    if (res?.kind === "success") {
+      toast.success("Token refreshed!")
+      await checkAuth()
+    }
+  }
+
+  const handleVerifyAuth = async () => {
+    await verifyCall.execute(() => checkAuth())
+  }
+
+  return (
+    <EndpointSection
+      title="Refresh Token"
+      description="Rotate the access and refresh tokens. Rate limit: 10 per 15 minutes."
+      method="POST"
+      path="/api/auth/refresh"
+    >
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          {isAuthenticated ? (
+            <Badge variant="default">Authenticated</Badge>
+          ) : (
+            <Badge variant="secondary">Not Authenticated</Badge>
+          )}
+          <span className="text-sm text-muted-foreground">
+            {isAuthenticated
+              ? "You have an active session. Refresh to rotate tokens."
+              : "Log in first before refreshing tokens."}
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={handleRefresh}
+            disabled={refreshCall.isPending || !isAuthenticated}
+          >
+            {refreshCall.isPending ? "Refreshing..." : "Refresh Token"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleVerifyAuth}
+            disabled={verifyCall.isPending}
+          >
+            {verifyCall.isPending ? "Verifying..." : "Verify Auth"}
+          </Button>
+        </div>
+        <Card className="bg-muted/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs text-muted-foreground">
+              Token Reuse Test
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground">
+            <p>To test token reuse detection:</p>
+            <ol className="mt-1 ml-4 list-decimal space-y-1">
+              <li>Login to establish a session</li>
+              <li>Click Refresh to rotate the token family</li>
+              <li>
+                The old refresh token is now invalid &mdash; any attempt to use
+                it will return HTTP 401 with &quot;Refresh token reuse detected.
+                All sessions revoked.&quot;
+              </li>
+            </ol>
+            <p className="mt-1">
+              Note: httpOnly cookies cannot be read from JavaScript, so manual
+              token reuse testing requires a tool like curl or Postman.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+      <ResponseViewer
+        result={refreshCall.result}
+        isPending={refreshCall.isPending}
+      />
+      <ResponseViewer
+        result={verifyCall.result}
+        isPending={verifyCall.isPending}
+      />
+    </EndpointSection>
+  )
+}
+
+export function AuthSection() {
+  const { user, isAuthenticated, isLoading } = useAuthState()
+
+  return (
+    <div className="space-y-6">
+      <AuthStatusBar
+        user={user}
+        isAuthenticated={isAuthenticated}
+        isLoading={isLoading}
+      />
+      <Tabs defaultValue="register">
+        <TabsList>
+          <TabsTrigger value="register">Register</TabsTrigger>
+          <TabsTrigger value="login">Login</TabsTrigger>
+          <TabsTrigger value="logout">Logout</TabsTrigger>
+          <TabsTrigger value="refresh">Refresh</TabsTrigger>
+        </TabsList>
+        <TabsContent value="register" className="mt-4">
+          <RegisterTab />
+        </TabsContent>
+        <TabsContent value="login" className="mt-4">
+          <LoginTab />
+        </TabsContent>
+        <TabsContent value="logout" className="mt-4">
+          <LogoutTab />
+        </TabsContent>
+        <TabsContent value="refresh" className="mt-4">
+          <RefreshTab />
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}
