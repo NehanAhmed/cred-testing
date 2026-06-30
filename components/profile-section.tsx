@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useForm, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
+import { z } from "zod"
 import { useAuthState } from "@/hooks/use-auth-state"
 import { useApiCall } from "@/hooks/use-api-call"
 import {
@@ -161,13 +162,15 @@ function GetProfileTab() {
   )
 }
 
+type UpdateFormValues = z.infer<typeof profileUpdateSchema>
+
 function UpdateProfileTab() {
   const updateCall = useApiCall<UserData>()
   const { isAuthenticated, checkAuth } = useAuthState()
-  const [genderValue, setGenderValue] = useState<string>("")
   const [loadPending, setLoadPending] = useState(false)
 
-  const form = useForm<ProfileUpdateInput>({
+  const form = useForm<UpdateFormValues>({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(profileUpdateSchema as any) as any,
     defaultValues: {
       username: "",
@@ -184,10 +187,11 @@ function UpdateProfileTab() {
         const p = result.body.data
         form.reset({
           username: p.username,
-          bio: p.bio ?? undefined,
-          phoneNumber: p.phoneNumber ?? undefined,
+          bio: p.bio ?? "",
+          phoneNumber: p.phoneNumber ?? "",
+          gender: (p.gender ?? undefined) as
+            "male" | "female" | "other" | undefined,
         })
-        setGenderValue(p.gender ?? "")
         toast.success("Profile loaded into form")
       } else {
         toast.error("Failed to load profile")
@@ -202,8 +206,7 @@ function UpdateProfileTab() {
     if (data.username) payload.username = data.username
     if (data.bio) payload.bio = data.bio
     if (data.phoneNumber) payload.phoneNumber = data.phoneNumber
-    if (data.gender)
-      payload.gender = data.gender as ProfileUpdateInput["gender"]
+    if (data.gender) payload.gender = data.gender
 
     const res = await updateCall.execute(() => updateProfileApi(payload))
     if (res?.kind === "success") {
@@ -288,11 +291,8 @@ function UpdateProfileTab() {
               <FormItem>
                 <FormLabel>Gender</FormLabel>
                 <Select
-                  onValueChange={(value) => {
-                    field.onChange(value)
-                    setGenderValue(value)
-                  }}
-                  value={genderValue}
+                  onValueChange={field.onChange}
+                  value={field.value ?? ""}
                 >
                   <FormControl>
                     <SelectTrigger>
@@ -332,8 +332,8 @@ function UpdateProfileTab() {
                   controller — you cannot clear a field via this form.
                 </li>
                 <li>
-                  Use the &ldquo;Load Current Profile&rdquo; button to compare before/after
-                  and see which fields changed.
+                  Use the &ldquo;Load Current Profile&rdquo; button to compare
+                  before/after and see which fields changed.
                 </li>
               </ul>
             </CardContent>
@@ -352,7 +352,7 @@ function UpdateProfileTab() {
 function DeleteAccountTab() {
   const deleteCall = useApiCall<null>()
   const verifyCall = useApiCall<UserData>()
-  const { isAuthenticated, clearAuth, checkAuth } = useAuthState()
+  const { isAuthenticated, checkAuth } = useAuthState()
   const [confirmStep, setConfirmStep] = useState(false)
   const [confirmText, setConfirmText] = useState("")
 
@@ -360,7 +360,6 @@ function DeleteAccountTab() {
     const res = await deleteCall.execute(() => deleteAccountApi())
     if (res?.kind === "success") {
       toast.success("Account deleted successfully")
-      clearAuth()
       setConfirmStep(false)
       setConfirmText("")
     }
@@ -370,21 +369,6 @@ function DeleteAccountTab() {
     await verifyCall.execute(() => checkAuth())
   }
 
-  if (!isAuthenticated) {
-    return (
-      <EndpointSection
-        title="Delete Account"
-        description="Permanently delete your account. This action is irreversible."
-        method="DELETE"
-        path="/api/profile/me"
-      >
-        <p className="text-sm text-muted-foreground">
-          Log in first to access this feature.
-        </p>
-      </EndpointSection>
-    )
-  }
-
   return (
     <EndpointSection
       title="Delete Account"
@@ -392,76 +376,85 @@ function DeleteAccountTab() {
       method="DELETE"
       path="/api/profile/me"
     >
-      <div className="space-y-4">
-        {!confirmStep ? (
-          <div className="space-y-3">
-            <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4">
-              <p className="text-sm font-medium text-destructive">Warning</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                This will permanently delete your account and all associated
-                data. This action cannot be undone.
-              </p>
-            </div>
-            <Button variant="destructive" onClick={() => setConfirmStep(true)}>
-              Delete Account
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-3 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
-            <p className="text-sm font-medium text-destructive">
-              Are you absolutely sure?
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Type <strong>DELETE</strong> to confirm:
-            </p>
-            <Input
-              value={confirmText}
-              onChange={(e) => setConfirmText(e.target.value)}
-              placeholder="Type DELETE to confirm"
-            />
-            <div className="flex gap-2">
+      {!isAuthenticated ? (
+        <p className="text-sm text-muted-foreground">
+          Log in first to access this feature.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          {!confirmStep ? (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4">
+                <p className="text-sm font-medium text-destructive">Warning</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  This will permanently delete your account and all associated
+                  data. This action cannot be undone.
+                </p>
+              </div>
               <Button
                 variant="destructive"
-                onClick={handleDelete}
-                disabled={confirmText !== "DELETE" || deleteCall.isPending}
+                onClick={() => setConfirmStep(true)}
               >
-                {deleteCall.isPending ? "Deleting..." : "Confirm Deletion"}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setConfirmStep(false)
-                  setConfirmText("")
-                }}
-              >
-                Cancel
+                Delete Account
               </Button>
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="space-y-3 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
+              <p className="text-sm font-medium text-destructive">
+                Are you absolutely sure?
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Type <strong>DELETE</strong> to confirm:
+              </p>
+              <Input
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder="Type DELETE to confirm"
+              />
+              <div className="flex gap-2">
+                <Button
+                  variant="destructive"
+                  onClick={handleDelete}
+                  disabled={confirmText !== "DELETE" || deleteCall.isPending}
+                >
+                  {deleteCall.isPending ? "Deleting..." : "Confirm Deletion"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setConfirmStep(false)
+                    setConfirmText("")
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
 
-        <Card className="bg-muted/50">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs text-muted-foreground">
-              Post-Deletion
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-xs text-muted-foreground">
-              After deletion, the JWT cookies are not automatically cleared. You
-              should also call Logout from the Authentication Module.
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleVerifyPostDelete}
-              disabled={verifyCall.isPending}
-            >
-              {verifyCall.isPending ? "Verifying..." : "Verify Auth State"}
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+          <Card className="bg-muted/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs text-muted-foreground">
+                Post-Deletion
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                After deletion, the JWT cookies are not automatically cleared.
+                You should also call Logout from the Authentication Module.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleVerifyPostDelete}
+                disabled={verifyCall.isPending}
+              >
+                {verifyCall.isPending ? "Verifying..." : "Verify Auth State"}
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <ResponseViewer
         result={deleteCall.result}
@@ -475,6 +468,8 @@ function DeleteAccountTab() {
   )
 }
 
+type PasswordFormValues = z.infer<typeof passwordChangeSchema>
+
 function ChangePasswordTab() {
   const changeCall = useApiCall<UserData>()
   const verifyNewCall = useApiCall<LoginData>()
@@ -485,7 +480,8 @@ function ChangePasswordTab() {
   const [lastNewPassword, setLastNewPassword] = useState("")
   const [lastOldPassword, setLastOldPassword] = useState("")
 
-  const form = useForm({
+  const form = useForm<PasswordFormValues>({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(passwordChangeSchema as any) as any,
     defaultValues: {
       currentPassword: "",
@@ -587,9 +583,7 @@ function ChangePasswordTab() {
             )}
           />
           <div className="space-y-2">
-            <Label htmlFor="confirmNewPassword">
-              Confirm New Password
-            </Label>
+            <Label htmlFor="confirmNewPassword">Confirm New Password</Label>
             <Input
               id="confirmNewPassword"
               type="password"
