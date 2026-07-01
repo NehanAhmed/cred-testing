@@ -66,7 +66,7 @@ function OAuthCallbackInner() {
       } else if (result.kind === "api-error") {
         setState({
           status: "error",
-          error: result.body.message,
+          error: "api_error",
           message: result.body.message,
           apiResult: result,
         })
@@ -160,11 +160,9 @@ function OAuthCallbackInner() {
                   </code>
                 </div>
               </div>
-              <Link href="/oauth">
-                <Button variant="outline" size="sm">
-                  Return to OAuth Testing
-                </Button>
-              </Link>
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/oauth">Return to OAuth Testing</Link>
+              </Button>
             </div>
           )}
 
@@ -177,11 +175,9 @@ function OAuthCallbackInner() {
                 </span>
               </div>
               <p className="text-sm text-destructive">{state.message}</p>
-              <Link href="/oauth">
-                <Button variant="outline" size="sm">
-                  Return to OAuth Testing
-                </Button>
-              </Link>
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/oauth">Return to OAuth Testing</Link>
+              </Button>
             </div>
           )}
         </CardContent>

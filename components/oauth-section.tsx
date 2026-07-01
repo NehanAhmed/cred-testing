@@ -85,7 +85,7 @@ export function OAuthSection() {
               key={id}
               onClick={() => handleInitOAuth(id)}
               variant="outline"
-              className="min-w-[160px]"
+              className="min-w-40"
             >
               Sign in with {label}
             </Button>

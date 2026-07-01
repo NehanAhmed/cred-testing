@@ -1,6 +1,7 @@
 import { HealthCheck } from "@/components/health-check"
 import Link from "next/link"
 import { ArrowRightIcon } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 export default function Page() {
   return (
@@ -14,27 +15,24 @@ export default function Page() {
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
-        <Link
-          href="/auth"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
-        >
-          Authentication Module
-          <ArrowRightIcon className="size-4" />
-        </Link>
-        <Link
-          href="/profile"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
-        >
-          Profile Module
-          <ArrowRightIcon className="size-4" />
-        </Link>
-        <Link
-          href="/oauth"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
-        >
-          OAuth Module
-          <ArrowRightIcon className="size-4" />
-        </Link>
+        <Button variant="outline" asChild>
+          <Link href="/auth">
+            Authentication Module
+            <ArrowRightIcon className="size-4" />
+          </Link>
+        </Button>
+        <Button variant="outline" asChild>
+          <Link href="/profile">
+            Profile Module
+            <ArrowRightIcon className="size-4" />
+          </Link>
+        </Button>
+        <Button variant="outline" asChild>
+          <Link href="/oauth">
+            OAuth Module
+            <ArrowRightIcon className="size-4" />
+          </Link>
+        </Button>
       </div>
       <HealthCheck />
     </div>
