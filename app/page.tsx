@@ -28,6 +28,13 @@ export default function Page() {
           Profile Module
           <ArrowRightIcon className="size-4" />
         </Link>
+        <Link
+          href="/oauth"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
+        >
+          OAuth Module
+          <ArrowRightIcon className="size-4" />
+        </Link>
       </div>
       <HealthCheck />
     </div>
