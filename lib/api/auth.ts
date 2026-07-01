@@ -59,6 +59,12 @@ export function refreshToken(): Promise<ApiResult<null>> {
   return apiCall<null>("/api/auth/refresh", { method: "POST" })
 }
 
+export function verifyEmail(token: string): Promise<ApiResult<never>> {
+  return apiCall<never>(`/api/auth/verify-email/${encodeURIComponent(token)}`, {
+    method: "GET",
+  })
+}
+
 export function forgotPassword(email: string): Promise<ApiResult<null>> {
   return apiCall<null>("/api/auth/forgot-password", {
     method: "POST",

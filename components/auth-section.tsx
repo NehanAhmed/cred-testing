@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useAuthState } from "@/hooks/use-auth-state"
@@ -10,7 +10,9 @@ import {
   login as loginApi,
   logout as logoutApi,
   refreshToken as refreshApi,
+  verifyEmail as verifyEmailApi,
 } from "@/lib/api/auth"
+import { getProfile } from "@/lib/api/profile"
 import { registerSchema, loginSchema } from "@/lib/schemas/auth"
 import type {
   RegisterInput,
@@ -19,10 +21,17 @@ import type {
   UserData,
 } from "@/lib/api/auth"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
@@ -247,7 +256,8 @@ function RegisterTab() {
             </Button>
             <p className="text-xs text-muted-foreground">
               After registering, check the server console for the Ethereal email
-              preview URL to verify your email.
+              preview URL. Then switch to the <strong>Verify Email</strong> tab
+              to paste the verification link.
             </p>
           </div>
         </form>
@@ -581,6 +591,200 @@ function RefreshTab() {
   )
 }
 
+function VerifyEmailTab() {
+  const verifyCall = useApiCall<never>()
+  const loginCheckCall = useApiCall<LoginData>()
+  const profileCheckCall = useApiCall<UserData>()
+  const [tokenInput, setTokenInput] = useState("")
+  const [loginEmail, setLoginEmail] = useState("")
+  const [loginPassword, setLoginPassword] = useState("")
+
+  const extractedToken = useMemo(() => {
+    const match = tokenInput.match(/\/verify-email\/([^/?]+)/)
+    if (match) return match[1]
+    return tokenInput.trim()
+  }, [tokenInput])
+
+  const verifiedParam = useMemo(() => {
+    if (verifyCall.result?.kind !== "redirect") return null
+    try {
+      const url = new URL(verifyCall.result.location)
+      return url.searchParams.get("verified")
+    } catch {
+      return null
+    }
+  }, [verifyCall.result])
+
+  const handleVerify = () => {
+    if (!extractedToken) return
+    verifyCall.execute(() => verifyEmailApi(extractedToken))
+  }
+
+  const handleLoginCheck = async () => {
+    const loginRes = await loginCheckCall.execute(() =>
+      loginApi({ email: loginEmail, password: loginPassword })
+    )
+    if (loginRes?.kind === "success") {
+      await profileCheckCall.execute(() => getProfile())
+    }
+  }
+
+  const handleOpenRedirect = () => {
+    if (verifyCall.result?.kind === "redirect" && verifyCall.result.location) {
+      window.open(verifyCall.result.location, "_blank")
+    }
+  }
+
+  const isVerifying = verifyCall.isPending
+  const canVerify = extractedToken.length > 0 && !isVerifying
+
+  return (
+    <EndpointSection
+      title="Verify Email"
+      description="Test the email verification flow — validate tokens, check expiry, and confirm account verification."
+      method="GET"
+      path="/api/auth/verify-email/:token"
+    >
+      <div className="space-y-4">
+        <Card className="bg-muted/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs text-muted-foreground">
+              How it works
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1 text-xs text-muted-foreground">
+            <ol className="ml-4 list-decimal space-y-1">
+              <li>
+                Register a new account using the <strong>Register</strong> tab
+              </li>
+              <li>
+                Check the server console for the Ethereal preview URL and open
+                it
+              </li>
+              <li>
+                Copy the verification link from the email and paste it below
+              </li>
+            </ol>
+          </CardContent>
+        </Card>
+
+        <div className="space-y-2">
+          <Label>Verification Token or URL</Label>
+          <Input
+            placeholder="Paste the full verification URL or just the token..."
+            value={tokenInput}
+            onChange={(e) => setTokenInput(e.target.value)}
+          />
+          {extractedToken && (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Extracted token:</span>
+              <Badge variant="secondary" className="font-mono text-xs">
+                {extractedToken.length > 40
+                  ? extractedToken.slice(0, 40) + "..."
+                  : extractedToken}
+              </Badge>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button onClick={handleVerify} disabled={!canVerify}>
+            {isVerifying ? "Verifying..." : "Verify Email"}
+          </Button>
+          {verifyCall.result?.kind === "redirect" && (
+            <Button variant="outline" onClick={handleOpenRedirect}>
+              Open in Browser
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <ResponseViewer
+        result={verifyCall.result}
+        isPending={verifyCall.isPending}
+      />
+
+      {verifiedParam !== null && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Verification Status</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">
+                Email verified:
+              </span>
+              <Badge
+                variant={verifiedParam === "true" ? "default" : "secondary"}
+              >
+                {verifiedParam === "true" ? "Yes" : "No"}
+              </Badge>
+              {verifiedParam === "false" && (
+                <span className="text-xs text-muted-foreground">
+                  The token may be invalid or expired. Try registering again.
+                </span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">
+            Post-Verification Login Test
+          </CardTitle>
+          <CardDescription className="text-xs">
+            After successful verification, try logging in to confirm
+            <code className="mx-1 rounded bg-muted px-1">isVerified</code>is now{" "}
+            <code className="rounded bg-muted px-1">true</code>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Email</Label>
+              <Input
+                type="email"
+                placeholder="john@example.com"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Password</Label>
+              <Input
+                type="password"
+                placeholder="Enter password"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+              />
+            </div>
+          </div>
+          <Button
+            onClick={handleLoginCheck}
+            disabled={loginCheckCall.isPending || !loginEmail || !loginPassword}
+          >
+            {loginCheckCall.isPending
+              ? "Logging in..."
+              : "Login & Check Verification"}
+          </Button>
+          <ResponseViewer
+            result={loginCheckCall.result}
+            isPending={loginCheckCall.isPending}
+          />
+          {loginCheckCall.result?.kind === "success" && (
+            <ResponseViewer
+              result={profileCheckCall.result}
+              isPending={profileCheckCall.isPending}
+            />
+          )}
+        </CardContent>
+      </Card>
+    </EndpointSection>
+  )
+}
+
 export function AuthSection() {
   const { user, isAuthenticated, isLoading } = useAuthState()
 
@@ -597,6 +801,7 @@ export function AuthSection() {
           <TabsTrigger value="login">Login</TabsTrigger>
           <TabsTrigger value="logout">Logout</TabsTrigger>
           <TabsTrigger value="refresh">Refresh</TabsTrigger>
+          <TabsTrigger value="verify-email">Verify Email</TabsTrigger>
         </TabsList>
         <TabsContent value="register" className="mt-4">
           <RegisterTab />
@@ -609,6 +814,9 @@ export function AuthSection() {
         </TabsContent>
         <TabsContent value="refresh" className="mt-4">
           <RefreshTab />
+        </TabsContent>
+        <TabsContent value="verify-email" className="mt-4">
+          <VerifyEmailTab />
         </TabsContent>
       </Tabs>
     </div>
