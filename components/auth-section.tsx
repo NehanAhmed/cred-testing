@@ -600,9 +600,10 @@ function VerifyEmailTab() {
   const [loginPassword, setLoginPassword] = useState("")
 
   const extractedToken = useMemo(() => {
-    const match = tokenInput.match(/\/verify-email\/([^/?]+)/)
+    const trimmed = tokenInput.trim()
+    const match = trimmed.match(/\/verify-email\/([^/?]+)/)
     if (match) return match[1]
-    return tokenInput.trim()
+    return trimmed
   }, [tokenInput])
 
   const verifiedParam = useMemo(() => {
@@ -620,18 +621,25 @@ function VerifyEmailTab() {
     verifyCall.execute(() => verifyEmailApi(extractedToken))
   }
 
+  const { checkAuth } = useAuthState()
+
   const handleLoginCheck = async () => {
     const loginRes = await loginCheckCall.execute(() =>
       loginApi({ email: loginEmail, password: loginPassword })
     )
     if (loginRes?.kind === "success") {
+      await checkAuth()
       await profileCheckCall.execute(() => getProfile())
     }
   }
 
   const handleOpenRedirect = () => {
     if (verifyCall.result?.kind === "redirect" && verifyCall.result.location) {
-      window.open(verifyCall.result.location, "_blank")
+      const a = document.createElement("a")
+      a.href = verifyCall.result.location
+      a.target = "_blank"
+      a.rel = "noopener noreferrer"
+      a.click()
     }
   }
 
@@ -669,8 +677,9 @@ function VerifyEmailTab() {
         </Card>
 
         <div className="space-y-2">
-          <Label>Verification Token or URL</Label>
+          <Label htmlFor="verify-token">Verification Token or URL</Label>
           <Input
+            id="verify-token"
             placeholder="Paste the full verification URL or just the token..."
             value={tokenInput}
             onChange={(e) => setTokenInput(e.target.value)}
