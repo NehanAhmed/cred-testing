@@ -33,6 +33,12 @@ export default function Page() {
             <ArrowRightIcon className="size-4" />
           </Link>
         </Button>
+        <Button variant="outline" asChild>
+          <Link href="/rate-limiting">
+            Rate Limiting
+            <ArrowRightIcon className="size-4" />
+          </Link>
+        </Button>
       </div>
       <HealthCheck />
     </div>
