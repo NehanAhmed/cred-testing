@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useForm, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -12,7 +12,9 @@ import {
   deleteAccount as deleteAccountApi,
   changePassword as changePasswordApi,
 } from "@/lib/api/profile"
-import { login as loginApi } from "@/lib/api/auth"
+import { login as loginApi, refreshToken as refreshApi } from "@/lib/api/auth"
+import { getAuditLogs } from "@/lib/api/audit"
+import type { AuditLogData, AuditLogEntry } from "@/lib/api/audit"
 import { profileUpdateSchema } from "@/lib/schemas/profile"
 import { passwordChangeSchema } from "@/lib/schemas/auth"
 import type { UserData, LoginData } from "@/lib/api/auth"
@@ -672,6 +674,394 @@ function ChangePasswordTab() {
   )
 }
 
+function AuditLogTab() {
+  const auditCall = useApiCall<AuditLogData>()
+  const [page, setPage] = useState(1)
+  const [limit] = useState(20)
+  const [actionFilter, setActionFilter] = useState("")
+  const [sortNewest, setSortNewest] = useState(true)
+
+  const logs = useMemo(() => {
+    if (auditCall.result?.kind !== "success") return []
+    const entries = auditCall.result.body.data.logs
+    const filtered = actionFilter
+      ? entries.filter((l) => l.action === actionFilter)
+      : entries
+    const sorted = [...filtered].sort((a, b) => {
+      const diff =
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      return sortNewest ? diff : -diff
+    })
+    return sorted
+  }, [auditCall.result, actionFilter, sortNewest])
+
+  const pagination = useMemo(() => {
+    if (auditCall.result?.kind !== "success") return null
+    return auditCall.result.body.data.pagination
+  }, [auditCall.result])
+
+  const actionTypes = useMemo(() => {
+    if (auditCall.result?.kind !== "success") return []
+    const types = new Set(auditCall.result.body.data.logs.map((l) => l.action))
+    return Array.from(types).sort()
+  }, [auditCall.result])
+
+  const handleFetch = (p: number) => {
+    auditCall.execute(() => getAuditLogs(p, limit))
+    setPage(p)
+  }
+
+  return (
+    <EndpointSection
+      title="Audit Log Viewer"
+      description="View paginated session audit logs for the authenticated user."
+      method="GET"
+      path="/api/profile/me/audit-logs"
+    >
+      <div className="space-y-4">
+        {!useAuthState().isAuthenticated ? (
+          <p className="text-sm text-muted-foreground">
+            Log in first to view audit logs.
+          </p>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                onClick={() => handleFetch(1)}
+                disabled={auditCall.isPending}
+              >
+                {auditCall.isPending ? "Loading..." : "Fetch Logs"}
+              </Button>
+              {pagination && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={page <= 1}
+                    onClick={() => handleFetch(page - 1)}
+                  >
+                    Prev
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    Page {pagination.page} of {pagination.totalPages}
+                    {" ("}
+                    {pagination.total} total{")"}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={page >= pagination.totalPages}
+                    onClick={() => handleFetch(page + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Label className="text-xs">Filter by action:</Label>
+                <select
+                  className="rounded-md border border-border bg-background px-3 py-1.5 text-xs"
+                  value={actionFilter}
+                  onChange={(e) => setActionFilter(e.target.value)}
+                >
+                  <option value="">All actions</option>
+                  {actionTypes.map((type: string) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setSortNewest(!sortNewest)}
+              >
+                {sortNewest ? "Newest First" : "Oldest First"}
+              </Button>
+            </div>
+
+            {auditCall.isPending && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />
+                Fetching logs...
+              </div>
+            )}
+
+            {!auditCall.isPending && logs.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                {auditCall.result
+                  ? "No log entries match the filter."
+                  : "Click Fetch Logs to load data."}
+              </p>
+            )}
+
+            {logs.length > 0 && (
+              <div className="space-y-2">
+                {logs.map((entry: AuditLogEntry) => (
+                  <Card key={entry._id}>
+                    <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant={
+                            entry.status === "success"
+                              ? "default"
+                              : entry.status === "failure"
+                                ? "destructive"
+                                : "secondary"
+                          }
+                        >
+                          {entry.status}
+                        </Badge>
+                        <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                          {entry.action}
+                        </code>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(entry.createdAt).toLocaleString()}
+                      </span>
+                    </CardHeader>
+                    <CardContent className="space-y-1 text-xs text-muted-foreground">
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <span>
+                          IP:{" "}
+                          <code className="rounded bg-muted px-1 font-mono">
+                            {entry.ip}
+                          </code>
+                        </span>
+                        <span
+                          className="max-w-xs truncate"
+                          title={entry.userAgent}
+                        >
+                          UA: {entry.userAgent}
+                        </span>
+                      </div>
+                      {entry.metadata &&
+                        Object.keys(entry.metadata).length > 0 && (
+                          <details className="mt-1">
+                            <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+                              Metadata
+                            </summary>
+                            <pre className="mt-1 max-h-32 overflow-auto rounded bg-muted p-2 font-mono text-xs">
+                              {JSON.stringify(entry.metadata, null, 2)}
+                            </pre>
+                          </details>
+                        )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <ResponseViewer
+        result={auditCall.result}
+        isPending={auditCall.isPending}
+      />
+    </EndpointSection>
+  )
+}
+
+function SessionInspectorTab() {
+  const { user, isAuthenticated, isLoading, checkAuth, clearAuth } =
+    useAuthState()
+  const profileCall = useApiCall<UserData>()
+  const refreshCall = useApiCall<null>()
+  const [lastRefreshTime, setLastRefreshTime] = useState<string | null>(null)
+
+  const handleCheckAuth = async () => {
+    const res = await profileCall.execute(() => getProfileApi())
+    if (res?.kind === "success") {
+      toast.success("Session is active")
+    } else {
+      clearAuth()
+    }
+  }
+
+  const handleRefreshSession = async () => {
+    const res = await refreshCall.execute(() => refreshApi())
+    if (res?.kind === "success") {
+      setLastRefreshTime(new Date().toLocaleString())
+      toast.success("Session refreshed!")
+      await checkAuth()
+    }
+  }
+
+  return (
+    <EndpointSection
+      title="Session & Cookie Inspector"
+      description="Inspect the current authentication session state and expected cookies."
+    >
+      <div className="space-y-4">
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
+            <CardTitle className="text-sm">Auth Status</CardTitle>
+            {isLoading ? (
+              <Badge variant="outline">Checking...</Badge>
+            ) : isAuthenticated ? (
+              <Badge variant="default">Authenticated</Badge>
+            ) : (
+              <Badge variant="secondary">Not Authenticated</Badge>
+            )}
+          </CardHeader>
+          <CardContent>
+            {isAuthenticated && user && (
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Username: </span>
+                  <span>{user.username}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Email: </span>
+                  <span>{user.email}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Verified: </span>
+                  <Badge
+                    variant={user.isVerified ? "default" : "secondary"}
+                    className="text-xs"
+                  >
+                    {user.isVerified ? "Yes" : "No"}
+                  </Badge>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">User ID: </span>
+                  <code className="text-xs text-muted-foreground">
+                    {user._id}
+                  </code>
+                </div>
+              </div>
+            )}
+            {!isAuthenticated && !isLoading && (
+              <p className="text-sm text-muted-foreground">
+                Not logged in. Use the Authentication Module to log in first.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Expected Cookies</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              The following httpOnly cookies are managed by the browser. Their
+              values cannot be read from JavaScript.
+            </p>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2 text-sm">
+                <Badge
+                  variant={isAuthenticated ? "default" : "outline"}
+                  className="shrink-0"
+                >
+                  {isAuthenticated ? "Set" : "N/A"}
+                </Badge>
+                <div>
+                  <code className="rounded bg-muted px-1 font-mono text-xs">
+                    token
+                  </code>
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    Access token (24h expiry)
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2 text-sm">
+                <Badge
+                  variant={isAuthenticated ? "default" : "outline"}
+                  className="shrink-0"
+                >
+                  {isAuthenticated ? "Set" : "N/A"}
+                </Badge>
+                <div>
+                  <code className="rounded bg-muted px-1 font-mono text-xs">
+                    refreshToken
+                  </code>
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    Refresh token (7d expiry, path=/api/auth)
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2 text-sm">
+                <Badge variant="outline" className="shrink-0">
+                  Transient
+                </Badge>
+                <div>
+                  <code className="rounded bg-muted px-1 font-mono text-xs">
+                    oauth_state
+                  </code>
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    Set only during OAuth flow, cleared on callback
+                  </span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Session Info</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Session Status:</span>
+              <span>{isAuthenticated ? "Active" : "Inactive"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Last Refresh:</span>
+              <span>
+                {lastRefreshTime ?? (
+                  <span className="text-muted-foreground">
+                    Not yet refreshed
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Token Visibility:</span>
+              <span className="text-xs text-muted-foreground">
+                httpOnly — not readable from JS
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2 pt-2">
+              <Button
+                size="sm"
+                onClick={handleCheckAuth}
+                disabled={profileCall.isPending}
+              >
+                {profileCall.isPending ? "Checking..." : "Check Auth"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleRefreshSession}
+                disabled={refreshCall.isPending || !isAuthenticated}
+              >
+                {refreshCall.isPending ? "Refreshing..." : "Refresh Session"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <ResponseViewer
+        result={profileCall.result}
+        isPending={profileCall.isPending}
+      />
+      <ResponseViewer
+        result={refreshCall.result}
+        isPending={refreshCall.isPending}
+      />
+    </EndpointSection>
+  )
+}
+
 export function ProfileSection() {
   const { user, isAuthenticated, isLoading } = useAuthState()
 
@@ -688,6 +1078,8 @@ export function ProfileSection() {
           <TabsTrigger value="update-profile">Update Profile</TabsTrigger>
           <TabsTrigger value="change-password">Change Password</TabsTrigger>
           <TabsTrigger value="delete-account">Delete Account</TabsTrigger>
+          <TabsTrigger value="audit-log">Audit Log</TabsTrigger>
+          <TabsTrigger value="session-inspector">Session Inspector</TabsTrigger>
         </TabsList>
         <TabsContent value="get-profile" className="mt-4">
           <GetProfileTab />
@@ -700,6 +1092,12 @@ export function ProfileSection() {
         </TabsContent>
         <TabsContent value="delete-account" className="mt-4">
           <DeleteAccountTab />
+        </TabsContent>
+        <TabsContent value="audit-log" className="mt-4">
+          <AuditLogTab />
+        </TabsContent>
+        <TabsContent value="session-inspector" className="mt-4">
+          <SessionInspectorTab />
         </TabsContent>
       </Tabs>
     </div>
