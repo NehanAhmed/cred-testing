@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { useForm } from "react-hook-form"
+import { useForm, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
+import { z } from "zod"
 import { useAuthState } from "@/hooks/use-auth-state"
 import { useApiCall } from "@/hooks/use-api-call"
 import {
@@ -11,9 +12,16 @@ import {
   logout as logoutApi,
   refreshToken as refreshApi,
   verifyEmail as verifyEmailApi,
+  forgotPassword as forgotPasswordApi,
+  resetPassword as resetPasswordApi,
 } from "@/lib/api/auth"
 import { getProfile } from "@/lib/api/profile"
-import { registerSchema, loginSchema } from "@/lib/schemas/auth"
+import {
+  registerSchema,
+  loginSchema,
+  passwordForgotSchema,
+  passwordResetSchema,
+} from "@/lib/schemas/auth"
 import type {
   RegisterInput,
   LoginInput,
@@ -110,6 +118,7 @@ function RegisterTab() {
   const [genderValue, setGenderValue] = useState<string>("")
 
   const form = useForm<RegisterInput>({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(registerSchema as any) as any,
     defaultValues: {
       username: "",
@@ -277,6 +286,7 @@ function LoginTab() {
   const [loginMode, setLoginMode] = useState<"email" | "username">("email")
 
   const form = useForm<LoginInput>({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(loginSchema as any) as any,
     defaultValues: {
       email: "",
@@ -794,6 +804,286 @@ function VerifyEmailTab() {
   )
 }
 
+function PasswordResetTab() {
+  const forgotCall = useApiCall<null>()
+  const resetCall = useApiCall<null>()
+  const verifyNewCall = useApiCall<LoginData>()
+  const verifyOldCall = useApiCall<LoginData>()
+
+  const [tokenInput, setTokenInput] = useState("")
+  const [confirmNewPassword, setConfirmNewPassword] = useState("")
+  const [passwordReset, setPasswordReset] = useState(false)
+  const [verificationOldPassword, setVerificationOldPassword] = useState("")
+
+  const forgotForm = useForm<z.infer<typeof passwordForgotSchema>>({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(passwordForgotSchema as any) as any,
+    defaultValues: { email: "" },
+  })
+
+  const resetForm = useForm<z.infer<typeof passwordResetSchema>>({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(passwordResetSchema as any) as any,
+    defaultValues: { password: "" },
+  })
+
+  const extractedToken = useMemo(() => {
+    const trimmed = tokenInput.trim()
+    const match = trimmed.match(/\/reset-password\/([^/?]+)/)
+    if (match) return match[1]
+    return trimmed
+  }, [tokenInput])
+
+  const forgotEmail = useWatch({ control: forgotForm.control, name: "email" })
+  const newPassword = useWatch({ control: resetForm.control, name: "password" })
+
+  const onForgotSubmit = forgotForm.handleSubmit(async (data) => {
+    await forgotCall.execute(() => forgotPasswordApi(data.email))
+    if (forgotCall.result?.kind === "success") {
+      toast.success("Reset email sent!")
+    }
+  })
+
+  const handleReset = resetForm.handleSubmit(async (data) => {
+    if (!extractedToken) {
+      toast.error("Please enter a reset token")
+      return
+    }
+    if (data.password !== confirmNewPassword) {
+      toast.error("Passwords do not match")
+      return
+    }
+    const res = await resetCall.execute(() =>
+      resetPasswordApi(extractedToken, data.password)
+    )
+    if (res?.kind === "success") {
+      toast.success("Password reset successfully!")
+      setPasswordReset(true)
+      setVerificationOldPassword("")
+    }
+  })
+
+  const handleVerifyNew = async () => {
+    if (!forgotEmail) {
+      toast.error("Enter an email in the Forgot Password form first")
+      return
+    }
+    if (!newPassword) {
+      toast.error("Set a new password in the Reset Password form first")
+      return
+    }
+    await verifyNewCall.execute(() =>
+      loginApi({ email: forgotEmail, password: newPassword })
+    )
+  }
+
+  const handleVerifyOld = async () => {
+    if (!forgotEmail || !verificationOldPassword) {
+      toast.error("Enter the old password to test")
+      return
+    }
+    await verifyOldCall.execute(() =>
+      loginApi({ email: forgotEmail, password: verificationOldPassword })
+    )
+  }
+
+  const canReset = extractedToken.length > 0 && !resetCall.isPending
+
+  return (
+    <div className="space-y-6">
+      <EndpointSection
+        title="Forgot Password"
+        description="Request a password reset email. Rate limit: 3 per 60 minutes."
+        method="POST"
+        path="/api/auth/forgot-password"
+      >
+        <p className="text-xs text-muted-foreground">
+          The API returns the same message whether the email exists or not
+          (prevents enumeration).
+        </p>
+        <Form {...forgotForm}>
+          <form onSubmit={onForgotSubmit} className="space-y-4">
+            <FormField
+              control={forgotForm.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="email"
+                      placeholder="john@example.com"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <Button type="submit" disabled={forgotCall.isPending}>
+              {forgotCall.isPending ? "Sending..." : "Send Reset Email"}
+            </Button>
+          </form>
+        </Form>
+        <ResponseViewer
+          result={forgotCall.result}
+          isPending={forgotCall.isPending}
+        />
+      </EndpointSection>
+
+      <EndpointSection
+        title="Reset Password"
+        description="Reset your password using the token from the reset email."
+        method="POST"
+        path="/api/auth/reset-password/:token"
+      >
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="reset-token">Reset Token or URL</Label>
+            <Input
+              id="reset-token"
+              placeholder="Paste the full reset URL or just the token..."
+              value={tokenInput}
+              onChange={(e) => setTokenInput(e.target.value)}
+            />
+            {extractedToken && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">Extracted token:</span>
+                <Badge variant="secondary" className="font-mono text-xs">
+                  {extractedToken.length > 40
+                    ? extractedToken.slice(0, 40) + "..."
+                    : extractedToken}
+                </Badge>
+              </div>
+            )}
+          </div>
+
+          <Form {...resetForm}>
+            <form onSubmit={handleReset} className="space-y-4">
+              <FormField
+                control={resetForm.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>New Password</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="password"
+                        placeholder="Min 8 chars, 1 uppercase, 1 digit"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="space-y-2">
+                <Label htmlFor="confirm-new-password">
+                  Confirm New Password
+                </Label>
+                <Input
+                  id="confirm-new-password"
+                  type="password"
+                  value={confirmNewPassword}
+                  onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  placeholder="Re-enter your new password"
+                />
+                {confirmNewPassword && newPassword !== confirmNewPassword && (
+                  <p className="text-sm text-destructive">
+                    Passwords do not match
+                  </p>
+                )}
+              </div>
+              <Button type="submit" disabled={!canReset}>
+                {resetCall.isPending ? "Resetting..." : "Reset Password"}
+              </Button>
+            </form>
+          </Form>
+        </div>
+        <ResponseViewer
+          result={resetCall.result}
+          isPending={resetCall.isPending}
+        />
+      </EndpointSection>
+
+      {passwordReset && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Post-Reset Verification</CardTitle>
+            <CardDescription className="text-xs">
+              Verify the new password works and the old password is rejected.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input
+                  value={forgotEmail}
+                  readOnly
+                  className="bg-muted/50 text-sm"
+                />
+              </div>
+              <Button
+                size="sm"
+                onClick={handleVerifyNew}
+                disabled={verifyNewCall.isPending}
+              >
+                {verifyNewCall.isPending
+                  ? "Verifying..."
+                  : "Verify New Password Works"}
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="space-y-2">
+                <Label>Old Password</Label>
+                <Input
+                  type="password"
+                  placeholder="Enter old password to test rejection"
+                  value={verificationOldPassword}
+                  onChange={(e) => setVerificationOldPassword(e.target.value)}
+                />
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleVerifyOld}
+                disabled={verifyOldCall.isPending || !verificationOldPassword}
+              >
+                {verifyOldCall.isPending
+                  ? "Verifying..."
+                  : "Verify Old Password Fails"}
+              </Button>
+            </div>
+            <Card className="bg-muted/50">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xs text-muted-foreground">
+                  Token Usage
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-xs text-muted-foreground">
+                <p>
+                  Reset tokens are one-time use. Attempting to reuse the same
+                  token will return HTTP 400 with &quot;Invalid or expired
+                  token.&quot;
+                </p>
+              </CardContent>
+            </Card>
+          </CardContent>
+          <ResponseViewer
+            result={verifyNewCall.result}
+            isPending={verifyNewCall.isPending}
+          />
+          <ResponseViewer
+            result={verifyOldCall.result}
+            isPending={verifyOldCall.isPending}
+          />
+        </Card>
+      )}
+    </div>
+  )
+}
+
 export function AuthSection() {
   const { user, isAuthenticated, isLoading } = useAuthState()
 
@@ -811,6 +1101,7 @@ export function AuthSection() {
           <TabsTrigger value="logout">Logout</TabsTrigger>
           <TabsTrigger value="refresh">Refresh</TabsTrigger>
           <TabsTrigger value="verify-email">Verify Email</TabsTrigger>
+          <TabsTrigger value="password-reset">Password Reset</TabsTrigger>
         </TabsList>
         <TabsContent value="register" className="mt-4">
           <RegisterTab />
@@ -826,6 +1117,9 @@ export function AuthSection() {
         </TabsContent>
         <TabsContent value="verify-email" className="mt-4">
           <VerifyEmailTab />
+        </TabsContent>
+        <TabsContent value="password-reset" className="mt-4">
+          <PasswordResetTab />
         </TabsContent>
       </Tabs>
     </div>
